@@ -751,7 +751,7 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
 
   unique_id_to_result = {}
   for result in all_results:
-    unique_id_to_result[result.unique_id] = result
+    unique_id_to_result[result.unique_id] = result    # 建立unique_id和预测结果的关系
 
   _PrelimPrediction = collections.namedtuple(  # pylint: disable=invalid-name
       "PrelimPrediction",
@@ -771,19 +771,19 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
     null_start_logit = 0  # the start logit at the slice with min null score
     null_end_logit = 0  # the end logit at the slice with min null score
     for (feature_index, feature) in enumerate(features):
-      result = unique_id_to_result[feature.unique_id]
-      start_indexes = _get_best_indexes(result.start_logits, n_best_size)
-      end_indexes = _get_best_indexes(result.end_logits, n_best_size)
+      result = unique_id_to_result[feature.unique_id]    # 拿到每个feature的预测结果
+      start_indexes = _get_best_indexes(result.start_logits, n_best_size)    # 得到概率排序前20的起始位置索引，也就是最好的20个
+      end_indexes = _get_best_indexes(result.end_logits, n_best_size)    # 得到概率排序前20的结束位置索引，也就是最好的20个
       # if we could have irrelevant answers, get the min score of irrelevant
-      if FLAGS.version_2_with_negative:
-        feature_null_score = result.start_logits[0] + result.end_logits[0]
-        if feature_null_score < score_null:
+      if FLAGS.version_2_with_negative:    # 对于SQuAD2.0 加入判断为空答案的预测
+        feature_null_score = result.start_logits[0] + result.end_logits[0]    # 采用特殊为['CLS']（对应的索引为0），因为start_logits和end_logits是max_seq_length的长度
+        if feature_null_score < score_null:    # 通过循环，得到最小的空答案的结果
           score_null = feature_null_score
           min_null_feature_index = feature_index
           null_start_logit = result.start_logits[0]
           null_end_logit = result.end_logits[0]
-      for start_index in start_indexes:
-        for end_index in end_indexes:
+      for start_index in start_indexes:    # 遍历每一个起始位置
+        for end_index in end_indexes:    # 遍历每一个结束位置
           # We could hypothetically create invalid predictions, e.g., predict
           # that the start of the span is in the question. We throw out all
           # invalid predictions.
@@ -802,7 +802,7 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
           length = end_index - start_index + 1
           if length > max_answer_length:
             continue
-          prelim_predictions.append(
+          prelim_predictions.append(    # 满足上述判断条件的，加入到最终的预测结果列表
               _PrelimPrediction(
                   feature_index=feature_index,
                   start_index=start_index,
@@ -810,15 +810,15 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
                   start_logit=result.start_logits[start_index],
                   end_logit=result.end_logits[end_index]))
 
-    if FLAGS.version_2_with_negative:
+    if FLAGS.version_2_with_negative:    # 对于SQuAD2.0，往结果加入一个 为 空答案的预测值
       prelim_predictions.append(
           _PrelimPrediction(
               feature_index=min_null_feature_index,
               start_index=0,
               end_index=0,
-              start_logit=null_start_logit,
+              start_logit=null_start_logit,    # 前边得到最小的空答案概率
               end_logit=null_end_logit))
-    prelim_predictions = sorted(
+    prelim_predictions = sorted(    # 对预测的结果排序，降序
         prelim_predictions,
         key=lambda x: (x.start_logit + x.end_logit),
         reverse=True)
@@ -829,10 +829,10 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
     seen_predictions = {}
     nbest = []
     for pred in prelim_predictions:
-      if len(nbest) >= n_best_size:
+      if len(nbest) >= n_best_size:    # 如果很多的话，我们只选取n_best_size 个 预测结果
         break
       feature = features[pred.feature_index]
-      if pred.start_index > 0:  # this is a non-null prediction
+      if pred.start_index > 0:  # this is a non-null prediction 这是非空答案预测.......
         tok_tokens = feature.tokens[pred.start_index:(pred.end_index + 1)]
         orig_doc_start = feature.token_to_orig_map[pred.start_index]
         orig_doc_end = feature.token_to_orig_map[pred.end_index]
@@ -865,32 +865,32 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
 
     # if we didn't inlude the empty option in the n-best, inlcude it
     if FLAGS.version_2_with_negative:
-      if "" not in seen_predictions:
+      if "" not in seen_predictions:    # 在预测（eval）阶段，seen_prediction里一定有“”，所以
         nbest.append(
             _NbestPrediction(
                 text="", start_logit=null_start_logit,
                 end_logit=null_end_logit))
     # In very rare edge cases we could have no valid predictions. So we
     # just create a nonce prediction in this case to avoid failure.
-    if not nbest:
+    if not nbest:    # 预测阶段 这里不会执行，因为无论如何都会有一个
       nbest.append(
           _NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0))
 
     assert len(nbest) >= 1
 
     total_scores = []
-    best_non_null_entry = None
+    best_non_null_entry = None    # 下面判断要 设置这个 值，但是！！！，如果没有答案，nbest长度只有一个，里边的文本是空
     for entry in nbest:
       total_scores.append(entry.start_logit + entry.end_logit)
       if not best_non_null_entry:
-        if entry.text:
+        if entry.text:    # 但是！！！，如果没有答案，nbest长度只有一个，里边的文本是空，下面的语句不会执行，此时，best_non_null_entry还是None！！
           best_non_null_entry = entry
 
-    probs = _compute_softmax(total_scores)
+    probs = _compute_softmax(total_scores)     # 对nbest预测的结果再求softmax进行，nbest来自对prelim_predictions的遍历，所以结果也是排完序的，降序
 
     nbest_json = []
     for (i, entry) in enumerate(nbest):
-      output = collections.OrderedDict()
+      output = collections.OrderedDict()    # 有序字典
       output["text"] = entry.text
       output["probability"] = probs[i]
       output["start_logit"] = entry.start_logit
@@ -902,24 +902,24 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
     if not FLAGS.version_2_with_negative:
       all_predictions[example.qas_id] = nbest_json[0]["text"]
     else:
-      # predict "" iff the null score - the score of best non-null > threshold
+      # predict "" iff the null score - the score of best non-null > threshold 
       score_diff = score_null - best_non_null_entry.start_logit - (
-          best_non_null_entry.end_logit)
-      scores_diff_json[example.qas_id] = score_diff
-      if score_diff > FLAGS.null_score_diff_threshold:
+          best_non_null_entry.end_logit)    # 计算空答案的概率，即预测的最小空答案的概率减去最好的非空答案的概率，得到，空答案和非空答案的差
+      scores_diff_json[example.qas_id] = score_diff    # 把这个差作为，最终预测的空答案的概率，即值越大，预测为空答案的可能性就越大
+      if score_diff > FLAGS.null_score_diff_threshold:    # 判断这个差是否大于阈值，如果大了，就为空
         all_predictions[example.qas_id] = ""
       else:
         all_predictions[example.qas_id] = best_non_null_entry.text
 
     all_nbest_json[example.qas_id] = nbest_json
 
-  with tf.gfile.GFile(output_prediction_file, "w") as writer:
+  with tf.gfile.GFile(output_prediction_file, "w") as writer:    # 写入最终的预测答案
     writer.write(json.dumps(all_predictions, indent=4) + "\n")
 
-  with tf.gfile.GFile(output_nbest_file, "w") as writer:
+  with tf.gfile.GFile(output_nbest_file, "w") as writer:    # 写入最终的nbest个预测结果
     writer.write(json.dumps(all_nbest_json, indent=4) + "\n")
 
-  if FLAGS.version_2_with_negative:
+  if FLAGS.version_2_with_negative:    # 如果是SQuAD2.0，则写入预测的空答案的概率
     with tf.gfile.GFile(output_null_log_odds_file, "w") as writer:
       writer.write(json.dumps(scores_diff_json, indent=4) + "\n")
 
