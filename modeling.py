@@ -566,13 +566,17 @@ def create_attention_mask_from_input_mask(from_tensor, to_mask):
   Returns:
     float Tensor of shape [batch_size, from_seq_length, to_seq_length].
   """
+  # 确保输入的tensor是2D或者3D，前两维是batch_size和from_seq_length
   from_shape = get_shape_list(from_tensor, expected_rank=[2, 3])
   batch_size = from_shape[0]
   from_seq_length = from_shape[1]
 
+  # 确保to_mask是2D的，shape是[batch_size, to_seq_length]
   to_shape = get_shape_list(to_mask, expected_rank=2)
   to_seq_length = to_shape[1]
 
+  # 1. 把to_mask的shape从[batch_size, to_seq_length]转成[batch_size, 1, to_seq_length]
+  # 2. 把to_mask的数据类型从int32转成float
   to_mask = tf.cast(
       tf.reshape(to_mask, [batch_size, 1, to_seq_length]), tf.float32)
 
@@ -581,10 +585,13 @@ def create_attention_mask_from_input_mask(from_tensor, to_mask):
   # tokens so we create a tensor of all ones.
   #
   # `broadcast_ones` = [batch_size, from_seq_length, 1]
+  # broadcast_ones是一个float32的[batch_size, from_seq_length, 1]的全1 tensor
   broadcast_ones = tf.ones(
       shape=[batch_size, from_seq_length, 1], dtype=tf.float32)
 
   # Here we broadcast along two dimensions to create the mask.
+  # [batch_size, from_seq_length, 1]和[[batch_size, 1, from_seq_length]相乘(element-wise乘积)，经过broadcast后
+  # 得到[batch_size, from_seq_length, from_seq_length]
   mask = broadcast_ones * to_mask
 
   return mask
