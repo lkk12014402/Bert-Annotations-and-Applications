@@ -1,3 +1,28 @@
+
+
+# 代码注释总结
+以下图片来自：https://daiwk.github.io/posts/nlp-bert-code-annotated-framework.html
+
+### embedding部分
+
+<div align=center>
+<img width="900" src="images/embedding_lookup.png"/>
+</div>
+
+### transformer部分
+
+<div align=center>
+<img width="700" src="images/transformer_model.png"/>
+</div>
+
+### pool输出部分
+
+<div align=center>
+<img width="700" src="images/get_pool_layer.png"/>
+</div>
+
+
+
 # BERT
 
 **\*\*\*\*\* New March 11th, 2020: Smaller BERT Models \*\*\*\*\***
