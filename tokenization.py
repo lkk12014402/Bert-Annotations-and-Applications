@@ -159,15 +159,20 @@ def whitespace_tokenize(text):
 
 
 class FullTokenizer(object):
-  """Runs end-to-end tokenziation."""
+  """Runs end-to-end tokenziation.
+  BERT里分词主要是由FullTokenizer类来实现的。
+  """
 
   def __init__(self, vocab_file, do_lower_case=True):
     self.vocab = load_vocab(vocab_file)
     self.inv_vocab = {v: k for k, v in self.vocab.items()}
-    self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case)
-    self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab)
+    self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case)    # 构造BasicTokenizer，根据空格等进行普通的分词（根据空格， 标点进行普通的分词， 最后返回的是关于词的列表， 对于中文而言是关于字的列表。）
+    self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab)    # 构造WordpieceTokenizer，把BasicTokenizer的结果再细粒度的切分为WordPiece
 
   def tokenize(self, text):
+    '''
+    tokenize函数实现分词，它先调用BasicTokenizer进行分词，接着调用WordpieceTokenizer把前者的结果再做细粒度切分
+    '''
     split_tokens = []
     for token in self.basic_tokenizer.tokenize(text):
       for sub_token in self.wordpiece_tokenizer.tokenize(token):
@@ -204,6 +209,8 @@ class BasicTokenizer(object):
     # and generally don't have any Chinese data in them (there are Chinese
     # characters in the vocabulary because Wikipedia does have some Chinese
     # words in the English Wikipedia.).
+    # 这是2018年11月1日为了支持多语言和中文增加的代码。这个代码也可以用于英语模型，因为在
+    # 英语的训练数据中基本不会出现中文字符(但是某些wiki里偶尔也可能出现中文)。
     text = self._tokenize_chinese_chars(text)
 
     orig_tokens = whitespace_tokenize(text)
@@ -249,7 +256,7 @@ class BasicTokenizer(object):
     return ["".join(x) for x in output]
 
   def _tokenize_chinese_chars(self, text):
-    """Adds whitespace around any CJK character."""
+    """Adds whitespace around any CJK character. 用于切分中文，这里的中文分词很简单，就是切分成一个一个的汉字。也就是在中文字符的前后加上空格，这样后续的分词流程会把没一个字符当成一个词"""
     output = []
     for char in text:
       cp = ord(char)
@@ -262,7 +269,7 @@ class BasicTokenizer(object):
     return "".join(output)
 
   def _is_chinese_char(self, cp):
-    """Checks whether CP is the codepoint of a CJK character."""
+    """Checks whether CP is the codepoint of a CJK character. 判断一个unicode字符是否中文字符 """
     # This defines a "chinese character" as anything in the CJK Unicode block:
     #   https://en.wikipedia.org/wiki/CJK_Unified_Ideographs_(Unicode_block)
     #
@@ -284,7 +291,7 @@ class BasicTokenizer(object):
     return False
 
   def _clean_text(self, text):
-    """Performs invalid character removal and whitespace cleanup on text."""
+    """Performs invalid character removal and whitespace cleanup on text. 去除一些无意义的字符以及whitespace"""
     output = []
     for char in text:
       cp = ord(char)
@@ -298,7 +305,12 @@ class BasicTokenizer(object):
 
 
 class WordpieceTokenizer(object):
-  """Runs WordPiece tokenziation."""
+  """Runs WordPiece tokenziation.
+  WordpieceTokenizer的作用是把词再切分成更细粒度的WordPiece。
+  关于WordPiece(Byte Pair Encoding)我们之前在机器翻译部分已经介绍过了，
+  它是一种解决OOV问题的方法，如果不管细节，我们把它看成比词更小的基本单位就行。
+  对于中文来说，WordpieceTokenizer什么也不干，因为之前的分词已经是基于字符的了
+  """
 
   def __init__(self, vocab, unk_token="[UNK]", max_input_chars_per_word=200):
     self.vocab = vocab
@@ -314,7 +326,10 @@ class WordpieceTokenizer(object):
     For example:
       input = "unaffable"
       output = ["un", "##aff", "##able"]
-
+    # 把一段文字切分成word piece。这其实是贪心的最大正向匹配算法。
+    # 比如：
+    # input = "unaffable"
+    # output = ["un", "##aff", "##able"]
     Args:
       text: A single token or whitespace separated tokens. This should have
         already been passed through `BasicTokenizer.
