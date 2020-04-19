@@ -549,7 +549,7 @@ def _check_is_max_context(doc_spans, cur_span_index, position):
 
 def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
                  use_one_hot_embeddings):
-  """Creates a classification model."""
+  """Creates a classification model."""  
   model = modeling.BertModel(
       config=bert_config,
       is_training=is_training,
@@ -557,7 +557,9 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
       input_mask=input_mask,
       token_type_ids=segment_ids,
       use_one_hot_embeddings=use_one_hot_embeddings)
-
+  # 如果做分类，因此我们只需要得到[CLS]最后一层的输出， model.get_pooled_output()
+  # 如果做序列标注，那么可以使用model.get_sequence_output()
+  # 这里类似序列标注，需要用到整个序列的输出
   final_hidden = model.get_sequence_output()
 
   final_hidden_shape = modeling.get_shape_list(final_hidden, expected_rank=3)
@@ -592,8 +594,16 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                      use_one_hot_embeddings):
   """Returns `model_fn` closure for TPUEstimator."""
 
+  # 注意：在model_fn的设计里，features表示输入(特征)，而labels表示输出
   def model_fn(features, labels, mode, params):  # pylint: disable=unused-argument
-    """The `model_fn` for TPUEstimator."""
+    """The `model_fn` for TPUEstimator.
+    1. 前两个参数是从输入函数中返回的特征和标签批次；也就是说，features 和 labels 是模型将使用的数据。
+    3. params 是一个字典，它可以传入许多参数用来构建网络或者定义训练方式等。例如通过设置params['n_classes']来定义最终输出节点的个数等。
+    3. mode 参数表示调用程序是请求训练、评估还是预测，分别通过tf.estimator.ModeKeys.TRAIN / EVAL / PREDICT 来定义。另外通过观察DNNClassifier的源代码可以看到，
+       mode这个参数并不用手动传入，因为Estimator会自动调整。例如当你调用estimator.train(...)的时候，mode则会被赋值tf.estimator.ModeKeys.TRAIN
+
+    model_fn需要对于不同的模式提供不同的处理方式，并且都需要返回一个tf.estimator.EstimatorSpec的实例。
+    """
 
     tf.logging.info("*** Features ***")
     for name in sorted(features.keys()):
@@ -605,7 +615,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     segment_ids = features["segment_ids"]
 
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
-
+    # 创建Bert模型，这是最主要的代码。
     (start_logits, end_logits) = create_model(
         bert_config=bert_config,
         is_training=is_training,
@@ -618,7 +628,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
 
     initialized_variable_names = {}
     scaffold_fn = None
-    if init_checkpoint:
+    if init_checkpoint:    # # 从checkpoint恢复参数
       (assignment_map, initialized_variable_names
       ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
       if use_tpu:
@@ -640,7 +650,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                       init_string)
 
     output_spec = None
-    if mode == tf.estimator.ModeKeys.TRAIN:
+    if mode == tf.estimator.ModeKeys.TRAIN:    # # 构造训练的spec
       seq_length = modeling.get_shape_list(input_ids)[1]
 
       def compute_loss(logits, positions):
@@ -663,16 +673,16 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           total_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu)
 
       output_spec = tf.contrib.tpu.TPUEstimatorSpec(
-          mode=mode,
-          loss=total_loss,
-          train_op=train_op,
+          mode=mode,    # 一个ModeKeys,指定是training(训练)、evaluation(计算)还是prediction(预测)
+          loss=total_loss,    # Training loss Tensor. Must be either scalar, or with shape [1]
+          train_op=train_op,   # 适用于训练的步骤
           scaffold_fn=scaffold_fn)
-    elif mode == tf.estimator.ModeKeys.PREDICT:
+    elif mode == tf.estimator.ModeKeys.PREDICT:    # 构造eval的spec
       predictions = {
           "unique_ids": unique_ids,
           "start_logits": start_logits,
           "end_logits": end_logits,
-      }
+      }    # 预测的返回
       output_spec = tf.contrib.tpu.TPUEstimatorSpec(
           mode=mode, predictions=predictions, scaffold_fn=scaffold_fn)
     else:
@@ -1144,8 +1154,8 @@ def main(_):
   run_config = tf.contrib.tpu.RunConfig(
       cluster=tpu_cluster_resolver,
       master=FLAGS.master,
-      model_dir=FLAGS.output_dir,
-      save_checkpoints_steps=FLAGS.save_checkpoints_steps,
+      model_dir=FLAGS.output_dir,    # 指定存储模型参数，graph等的路径
+      save_checkpoints_steps=FLAGS.save_checkpoints_steps,    # 每隔多少step就存一次checkpoint
       tpu_config=tf.contrib.tpu.TPUConfig(
           iterations_per_loop=FLAGS.iterations_per_loop,
           num_shards=FLAGS.num_tpu_cores,
@@ -1179,8 +1189,8 @@ def main(_):
   # or GPU.
   estimator = tf.contrib.tpu.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
-      model_fn=model_fn,
-      config=run_config,
+      model_fn=model_fn,    # 这个是需要我们自定义的网络模型函数
+      config=run_config,    # 用于控制内部和checkpoints等，如果model_fn函数也定义config这个变量，则会将config传给model_fn
       train_batch_size=FLAGS.train_batch_size,
       predict_batch_size=FLAGS.predict_batch_size)
 
